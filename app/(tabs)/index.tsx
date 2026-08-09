@@ -1,5 +1,6 @@
 import { BleNitro, BLEState, type BLEDevice } from 'react-native-ble-nitro';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   FlatList,
   Pressable,
@@ -11,6 +12,8 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
+
+const ESP32_SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 
 const ble = BleNitro.instance();
 
@@ -37,6 +40,7 @@ async function requestBlePermissions(): Promise<boolean> {
 }
 
 export default function ScanScreen() {
+  const router = useRouter();
   const [bleState, setBleState] = useState<BLEState>(() => ble.state());
   const [devices, setDevices] = useState<BLEDevice[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -66,7 +70,7 @@ export default function ScanScreen() {
     setScanning(true);
 
     ble.startScan(
-      undefined,
+      [ESP32_SERVICE_UUID],
       (device) => {
         setDevices((prev) => {
           if (prev.find((d) => d.id === device.id)) return prev;
@@ -87,6 +91,7 @@ export default function ScanScreen() {
 
   const isReady = bleState === BLEState.PoweredOn;
   const canScan = isReady || bleState === BLEState.Unauthorized;
+  const visibleDevices = devices.filter((d) => !!d.name);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -126,22 +131,24 @@ export default function ScanScreen() {
 
         {scanning && <Text style={styles.scanningLabel}>Recherche en cours...</Text>}
 
-        {devices.length > 0 && (
-          <Text style={styles.count}>{devices.length} appareil(s) trouvé(s)</Text>
+        {visibleDevices.length > 0 && (
+          <Text style={styles.count}>{visibleDevices.length} appareil(s) trouvé(s)</Text>
         )}
 
         <FlatList
-          data={devices}
+          data={visibleDevices}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <View style={styles.device}>
+            <Pressable
+              style={({ pressed }) => [styles.device, pressed && styles.devicePressed]}
+              onPress={() => router.push({ pathname: '/ble-test', params: { deviceId: item.id, deviceName: item.name ?? '' } })}>
               <View style={styles.deviceInfo}>
                 <Text style={styles.deviceName}>{item.name || '(sans nom)'}</Text>
                 <Text style={styles.deviceId}>{item.id}</Text>
               </View>
               <Text style={styles.rssi}>{item.rssi} dBm</Text>
-            </View>
+            </Pressable>
           )}
           ListEmptyComponent={
             !scanning ? (
@@ -205,6 +212,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  devicePressed: { opacity: 0.6 },
   deviceInfo: { flex: 1 },
   deviceName: { fontWeight: '600', fontSize: 15, color: '#111' },
   deviceId: { fontSize: 11, color: '#999', marginTop: 2, fontFamily: 'monospace' },

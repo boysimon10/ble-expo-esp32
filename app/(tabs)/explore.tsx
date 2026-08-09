@@ -12,7 +12,7 @@ export default function SettingsScreen() {
             <Text style={styles.rowLabel}>Application</Text>
             <Text style={styles.rowValue}>BLE Expo</Text>
           </View>
-          <View style={[styles.row, styles.rowLast]}>
+          <View style={styles.row}>
             <Text style={styles.rowLabel}>Version</Text>
             <Text style={styles.rowValue}>1.0.0</Text>
           </View>
@@ -24,7 +24,7 @@ export default function SettingsScreen() {
             <Text style={styles.rowLabel}>Bibliothèque</Text>
             <Text style={styles.rowValue}>ble-nitro</Text>
           </View>
-          <View style={[styles.row, styles.rowLast]}>
+          <View style={styles.row}>
             <Text style={styles.rowLabel}>Durée du scan</Text>
             <Text style={styles.rowValue}>5 secondes</Text>
           </View>
@@ -80,7 +80,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
   },
-  rowLast: {},
   rowLabel: {
     fontSize: 15,
     color: '#111',
