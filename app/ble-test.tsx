@@ -22,6 +22,8 @@ const ble = BleNitro.instance();
 const stringToBytes = (str: string): number[] => str.split('').map((c) => c.charCodeAt(0));
 const bytesToString = (bytes: number[]): string => String.fromCharCode(...bytes);
 
+type BleEntry = { time: string; raw: string };
+
 async function requestBlePermissions(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   if (parseInt(Platform.Version.toString(), 10) >= 31) {
@@ -45,7 +47,7 @@ export default function BleTestScreen() {
   const [password, setPassword] = useState('');
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [dataReceived, setDataReceived] = useState<string | null>(null);
+  const [bleEntries, setBleEntries] = useState<BleEntry[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
 
   const notifSub = useRef<AsyncSubscription | null>(null);
@@ -53,6 +55,11 @@ export default function BleTestScreen() {
   const addLog = useCallback((msg: string) => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [`[${time}] ${msg}`, ...prev].slice(0, 100));
+  }, []);
+
+  const addBleEntry = useCallback((raw: string) => {
+    const time = new Date().toLocaleTimeString();
+    setBleEntries((prev) => [{ time, raw }, ...prev].slice(0, 200));
   }, []);
 
   const connectToDevice = useCallback(async (device: BLEDevice) => {
@@ -63,7 +70,6 @@ export default function BleTestScreen() {
       await ble.connect(device.id, () => {
         addLog(`Déconnecté de ${device.name || device.id}`);
         setConnectedDevice(null);
-        setDataReceived(null);
         notifSub.current = null;
       });
 
@@ -79,7 +85,7 @@ export default function BleTestScreen() {
           ESP32_CHARACTERISTIC_UUID,
           (_, bytes) => {
             const data = bytesToString(bytes);
-            setDataReceived(data);
+            addBleEntry(data);
             addLog(`Reçu : ${data}`);
           },
         );
@@ -92,7 +98,7 @@ export default function BleTestScreen() {
     } finally {
       setConnecting(false);
     }
-  }, [addLog]);
+  }, [addLog, addBleEntry]);
 
   useEffect(() => {
     requestBlePermissions();
@@ -188,19 +194,39 @@ export default function BleTestScreen() {
           </Pressable>
         </View>
 
-        {/* Données reçues */}
-        {dataReceived !== null && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Données reçues</Text>
-            <Text style={styles.dataText}>{dataReceived}</Text>
+        {/* Réponses BLE ESP32 */}
+        <View style={styles.bleBox}>
+          <View style={styles.bleHeader}>
+            <View style={styles.bleHeaderLeft}>
+              <View style={[styles.bleDot, isConnected ? styles.dotOn : styles.dotOff]} />
+              <Text style={styles.bleTitle}>Réponses ESP32</Text>
+            </View>
+            {bleEntries.length > 0 && (
+              <Pressable onPress={() => setBleEntries([])}>
+                <Text style={styles.bleClear}>Effacer</Text>
+              </Pressable>
+            )}
           </View>
-        )}
 
-        {/* Logs */}
+          {bleEntries.length === 0 ? (
+            <Text style={styles.bleEmpty}>
+              {isConnected ? 'En attente de données...' : 'Connectez un appareil pour voir les données'}
+            </Text>
+          ) : (
+            bleEntries.map((entry, i) => (
+              <View key={i} style={[styles.bleEntry, i === 0 && styles.bleEntryFirst]}>
+                <Text style={styles.bleTime}>{entry.time}</Text>
+                <Text style={styles.bleRaw}>{entry.raw}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Logs système */}
         {logs.length > 0 && (
           <View style={styles.logBox}>
             <View style={styles.logHeader}>
-              <Text style={styles.logTitle}>LOG</Text>
+              <Text style={styles.logTitle}>LOG SYSTÈME</Text>
               <Pressable onPress={() => setLogs([])}>
                 <Text style={styles.logClear}>Effacer</Text>
               </Pressable>
@@ -283,7 +309,28 @@ const styles = StyleSheet.create({
   sendButtonPressed: { opacity: 0.8 },
   sendButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
 
-  dataText: { fontSize: 14, color: '#111', fontFamily: 'monospace' },
+  bleBox: {
+    backgroundColor: '#0d1117',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    minHeight: 120,
+  },
+  bleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  bleHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bleDot: { width: 8, height: 8, borderRadius: 4 },
+  bleTitle: { color: '#58a6ff', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  bleClear: { color: '#FF453A', fontSize: 12 },
+  bleEmpty: { color: '#555', fontSize: 13, fontStyle: 'italic', textAlign: 'center', marginTop: 16 },
+  bleEntry: {
+    borderTopWidth: 1,
+    borderTopColor: '#21262d',
+    paddingTop: 8,
+    marginTop: 8,
+  },
+  bleEntryFirst: { borderTopWidth: 0, marginTop: 0, paddingTop: 0 },
+  bleTime: { color: '#6e7681', fontSize: 10, fontFamily: 'monospace', marginBottom: 2 },
+  bleRaw: { color: '#3fb950', fontSize: 13, fontFamily: 'monospace' },
 
   logBox: { backgroundColor: '#1c1c1e', borderRadius: 12, padding: 14 },
   logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
