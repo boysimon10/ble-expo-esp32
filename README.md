@@ -1,43 +1,61 @@
-# BLE Expo / ESP-32 + react-native-ble-nitro
+# ble-expo — ESP32 WiFi Provisioning
 
-An experimental React Native (Expo) app exploring Bluetooth Low Energy communication with an ESP-32 using `react-native-ble-nitro`.
+Application mobile React Native (Expo) pour configurer un ESP32 via Bluetooth Low Energy (WiFi provisioning).
 
-## Launch
+## Fonctionnement
+
+1. L'app scanne les appareils BLE et filtre uniquement les ESP32 (par UUID de service)
+2. L'utilisateur sélectionne un appareil et est redirigé vers l'écran de provisioning
+3. Il saisit le SSID et le mot de passe WiFi, puis les envoie via BLE
+4. L'ESP32 tente la connexion et renvoie `OK:<IP>` ou `FAIL` via BLE notify
+5. La réponse s'affiche en live dans le panneau "Réponses ESP32"
+
+## Stack
+
+- React Native 0.81 + Expo 54
+- expo-router (navigation)
+- react-native-ble-nitro (BLE)
+
+## Lancer l'app
 
 ```bash
 npm install
-npx expo run:android   # builds and installs on connected Android device
+npx expo run:android   # build + installe sur un appareil Android connecté en USB
 ```
 
-> You need a physical device, BLE doesn't work in emulators.
+> BLE ne fonctionne pas sur émulateur, il faut un appareil physique.
 
-If the APK is already installed and you just want to update the JS:
+Si l'APK est déjà installé et que tu veux juste mettre à jour le JS :
 
 ```bash
 npx expo start --dev-client
 ```
 
-## Why react-native-ble-nitro?
+## UUIDs BLE
 
-After a lot of struggle trying to get `react-native-ble-plx` to work (setup issues, random crashes, hard to debug errors) I decided to try something else.
+| Rôle            | UUID                                   |
+|-----------------|----------------------------------------|
+| Service         | `12345678-1234-5678-1234-56789abcdef0` |
+| Caractéristique | `abcdef12-3456-7890-abcd-ef1234567890` |
 
-`react-native-ble-nitro` is a newer BLE library built on top of `react-native-nitro-modules`. It communicates with native code more directly, which makes it faster and easier to set up. So far the experience has been much smoother.
+## Format des messages BLE
 
-## Setup
+| Direction   | Format              | Exemple                 |
+|-------------|---------------------|-------------------------|
+| App → ESP32 | `SSID,password`     | `MonWifi,motdepasse123` |
+| ESP32 → App | `OK:<IP>` ou `FAIL` | `OK:192.168.1.42`       |
 
-The library exposes a singleton, one shared BLE manager for the whole app:
+## Firmware Arduino
 
-```ts
-import { BleNitro } from 'react-native-ble-nitro';
+Les fichiers `.ino` se trouvent dans le dossier `arduino/`.
 
-const ble = BleNitro.instance();
-```
+| Fichier                       | Description                                       |
+|-------------------------------|---------------------------------------------------|
+| `arduino/ble_wifi_test.ino`   | Sketch de test minimal BLE + WiFi (sans SD/audio) |
 
-Create this outside your component so it's not recreated on every render.
+## Permissions Android
 
-## Permissions
-
-Permissions are configured via `app.json` using the `react-native-ble-nitro` Expo plugin. On iOS it sets the Bluetooth usage description, on Android it handles the manifest permissions automatically.
+Gérées via le plugin `react-native-ble-nitro` dans `app.json` :
 
 ```json
 ["react-native-ble-nitro", {
@@ -47,11 +65,12 @@ Permissions are configured via `app.json` using the `react-native-ble-nitro` Exp
 }]
 ```
 
-After any change, run `npx expo prebuild` to regenerate native files.
+Après toute modification, relancer `npx expo prebuild` pour regénérer les fichiers natifs.
 
-## What this experiment covers
+## Setup BLE (singleton)
 
-- Scanning for nearby BLE devices and displaying them in a list (name, ID, RSSI)
-- Requesting runtime Bluetooth permissions on Android
-- Monitoring Bluetooth state changes in real time
-- Foundation for connecting to an ESP-32 and reading/writing characteristics
+```ts
+import { BleNitro } from 'react-native-ble-nitro';
+
+const ble = BleNitro.instance(); // à créer en dehors du composant
+```
