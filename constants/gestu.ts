@@ -30,14 +30,38 @@ async function renewTokens(): Promise<void> {
   refreshToken = data.refreshToken;
 }
 
-export async function fetchPairingToken(deviceId: string): Promise<string> {
-  const body = { deviceId: deviceId.trim().toUpperCase() };
-  let res = await post('/users/radios/pairing-token', body, accessToken);
+// oui j'ai la flemme de mettre un autre env c juste un poc
+export const SOCKET_URL = API_URL.replace(/\/api\/v\d+\/?$/, '');
+
+export async function getAccessToken(forceRenew = false): Promise<string> {
+  if (forceRenew || !accessToken) await renewTokens();
+  return accessToken;
+}
+
+async function withAuth(path: string, body: unknown, method = 'POST') {
+  const call = async () => {
+    const res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await getAccessToken()}` },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json().catch(() => null) };
+  };
+  let res = await call();
   if (res.status === 401) {
     await renewTokens();
-    res = await post('/users/radios/pairing-token', body, accessToken);
+    res = await call();
   }
-  const token = res.json?.data?.pairingToken;
-  if (!token) throw new Error(res.json?.message ?? `HTTP ${res.status}`);
-  return token;
+  if (!res.json?.success) throw new Error(res.json?.message ?? `HTTP ${res.status}`);
+  return res.json.data;
+}
+
+export async function fetchPairingToken(deviceId: string): Promise<string> {
+  const data = await withAuth('/users/radios/pairing-token', { deviceId: deviceId.trim().toUpperCase() });
+  if (!data?.pairingToken) throw new Error('pairingToken absent de la réponse');
+  return data.pairingToken;
+}
+
+export async function renameRadio(radioId: string, name: string): Promise<void> {
+  await withAuth(`/users/radios/${radioId}`, { name: name.trim() }, 'PATCH');
 }

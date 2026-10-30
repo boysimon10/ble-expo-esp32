@@ -13,7 +13,8 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
-import { fetchPairingToken } from '@/constants/gestu';
+import { fetchPairingToken, renameRadio } from '@/constants/gestu';
+import { useRadioSocket, type RadioPairedEvent } from '@/hooks/use-radio-socket';
 
 const ESP32_SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 const ESP32_CHARACTERISTIC_UUID = 'abcdef12-3456-7890-abcd-ef1234567890';
@@ -64,12 +65,42 @@ export default function BleTestScreen() {
   const [bleEntries, setBleEntries] = useState<BleEntry[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
 
+  const [pairedRadio, setPairedRadio] = useState<RadioPairedEvent | null>(null);
+  const [radioName, setRadioName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+
   const notifSub = useRef<AsyncSubscription | null>(null);
 
   const addLog = useCallback((msg: string) => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [`[${time}] ${msg}`, ...prev].slice(0, 100));
   }, []);
+
+  const { connected: wsConnected } = useRadioSocket((event) => {
+    if (event.deviceId !== radioId) {
+      addLog(`radio:paired ignoré (autre radio : ${event.deviceId})`);
+      return;
+    }
+    addLog(`radio:paired reçu : ${event.name} (${event.radioId})`);
+    setPairedRadio(event);
+    setRadioName(event.name);
+    setNameSaved(false);
+  }, addLog);
+
+  const saveRadioName = async () => {
+    if (!pairedRadio) return;
+    setSaving(true);
+    try {
+      await renameRadio(pairedRadio.radioId, radioName);
+      setNameSaved(true);
+      addLog(`Radio renommée : ${radioName.trim()}`);
+    } catch (e) {
+      addLog(`Erreur de renommage : ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const addBleEntry = useCallback((raw: string) => {
     const time = new Date().toLocaleTimeString();
@@ -187,6 +218,9 @@ export default function BleTestScreen() {
           {isConnected && (
             <Text style={styles.deviceIdText}>{connectedDevice.id}</Text>
           )}
+          <Text style={[styles.wsText, wsConnected ? styles.statusOn : styles.statusOff]}>
+            WebSocket : {wsConnected ? 'connecté' : 'déconnecté'}
+          </Text>
         </View>
 
         {/* Formulaire WiFi */}
@@ -228,6 +262,38 @@ export default function BleTestScreen() {
             {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendButtonText}>Envoyer</Text>}
           </Pressable>
         </View>
+
+        {/* Nommage après l'event WebSocket radio:paired */}
+        {pairedRadio && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Radio appairée 🎉</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nom de la radio (ex. Salon)"
+              placeholderTextColor="#aaa"
+              value={radioName}
+              onChangeText={(v) => {
+                setRadioName(v);
+                setNameSaved(false);
+              }}
+              maxLength={100}
+            />
+            <Pressable
+              style={({ pressed }) => [
+                styles.sendButton,
+                (saving || !radioName.trim()) && styles.sendButtonDisabled,
+                pressed && styles.sendButtonPressed,
+              ]}
+              onPress={saveRadioName}
+              disabled={saving || !radioName.trim()}>
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.sendButtonText}>{nameSaved ? 'Nom enregistré ✓' : 'Enregistrer le nom'}</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
 
         {/* Réponses BLE ESP32 */}
         <View style={styles.bleBox}>
@@ -305,6 +371,7 @@ const styles = StyleSheet.create({
   statusOn: { color: '#34C759' },
   statusOff: { color: '#FF3B30' },
   deviceIdText: { fontSize: 11, color: '#999', marginTop: 4, fontFamily: 'monospace' },
+  wsText: { fontSize: 12, fontWeight: '500', marginTop: 6 },
 
   card: {
     backgroundColor: '#fff',
