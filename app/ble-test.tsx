@@ -77,16 +77,25 @@ export default function BleTestScreen() {
     setLogs((prev) => [`[${time}] ${msg}`, ...prev].slice(0, 100));
   }, []);
 
-  const { connected: wsConnected } = useRadioSocket((event) => {
+  const [wsNotice, setWsNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showWsNotice = (msg: string) => {
+    setWsNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setWsNotice(null), 5000);
+  };
+
+  const ws = useRadioSocket((event) => {
     if (event.deviceId !== radioId) {
-      addLog(`radio:paired ignoré (autre radio : ${event.deviceId})`);
+      showWsNotice(`radio:paired reçu pour une autre radio (${event.deviceId})`);
       return;
     }
-    addLog(`radio:paired reçu : ${event.name} (${event.radioId})`);
+    showWsNotice(`📻 Radio appairée : ${event.name}`);
     setPairedRadio(event);
     setRadioName(event.name);
     setNameSaved(false);
-  }, addLog);
+  });
 
   const saveRadioName = async () => {
     if (!pairedRadio) return;
@@ -149,6 +158,7 @@ export default function BleTestScreen() {
     requestBlePermissions();
     return () => {
       notifSub.current?.remove().catch(() => {});
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
   }, []);
 
@@ -203,8 +213,9 @@ export default function BleTestScreen() {
           <View style={[styles.statusDot, isConnected ? styles.dotOn : styles.dotOff]} />
         </View>
 
-        {/* Statut connexion */}
+        {/* Statut connexion BLE */}
         <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Bluetooth (ESP32)</Text>
           {connecting ? (
             <View style={styles.statusRow}>
               <ActivityIndicator size="small" color="#007AFF" />
@@ -218,9 +229,24 @@ export default function BleTestScreen() {
           {isConnected && (
             <Text style={styles.deviceIdText}>{connectedDevice.id}</Text>
           )}
-          <Text style={[styles.wsText, wsConnected ? styles.statusOn : styles.statusOff]}>
-            WebSocket : {wsConnected ? 'connecté' : 'déconnecté'}
-          </Text>
+        </View>
+
+        {/* Statut WebSocket (serveur) */}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Serveur (WebSocket)</Text>
+          <View style={styles.statusRow}>
+            {ws.status === 'connecting' && <ActivityIndicator size="small" color="#007AFF" />}
+            <Text
+              style={[
+                styles.statusText,
+                ws.status === 'connected' && styles.statusOn,
+                ws.status === 'error' && styles.statusOff,
+              ]}>
+              {ws.status === 'connected' ? 'Connecté' : ws.status === 'connecting' ? 'Connexion...' : 'Erreur'}
+            </Text>
+          </View>
+          <Text style={styles.deviceIdText}>{ws.url || '(URL vide)'}</Text>
+          {ws.error && <Text style={styles.wsError}>{ws.error}</Text>}
         </View>
 
         {/* Formulaire WiFi */}
@@ -339,6 +365,13 @@ export default function BleTestScreen() {
         )}
 
       </ScrollView>
+
+      {/* Bannière des events WebSocket */}
+      {wsNotice && (
+        <Pressable style={styles.banner} onPress={() => setWsNotice(null)}>
+          <Text style={styles.bannerText}>{wsNotice}</Text>
+        </Pressable>
+      )}
     </SafeAreaView>
   );
 }
@@ -371,7 +404,25 @@ const styles = StyleSheet.create({
   statusOn: { color: '#34C759' },
   statusOff: { color: '#FF3B30' },
   deviceIdText: { fontSize: 11, color: '#999', marginTop: 4, fontFamily: 'monospace' },
-  wsText: { fontSize: 12, fontWeight: '500', marginTop: 6 },
+  statusLabel: { fontSize: 11, fontWeight: '600', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  wsError: { fontSize: 12, color: '#c0392b', marginTop: 6 },
+
+  banner: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    right: 16,
+    backgroundColor: '#1c1c1e',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  bannerText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   card: {
     backgroundColor: '#fff',
