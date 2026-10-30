@@ -70,7 +70,7 @@ export default function ScanScreen() {
     setScanning(true);
 
     ble.startScan(
-      [ESP32_SERVICE_UUID],
+      { serviceUUIDs: [ESP32_SERVICE_UUID] },
       (device) => {
         setDevices((prev) => {
           if (prev.find((d) => d.id === device.id)) return prev;

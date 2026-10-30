@@ -13,14 +13,26 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
+import { fetchPairingToken } from '@/constants/gestu';
 
 const ESP32_SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
 const ESP32_CHARACTERISTIC_UUID = 'abcdef12-3456-7890-abcd-ef1234567890';
+// Taille sûre avec le MTU par défaut (23 - 3 octets d'en-tête ATT).
+const BLE_CHUNK_SIZE = 20;
 
 const ble = BleNitro.instance();
 
-const stringToBytes = (str: string): number[] => str.split('').map((c) => c.charCodeAt(0));
+const stringToBytes = (str: string): number[] => Array.from(new TextEncoder().encode(str));
 const bytesToString = (bytes: number[]): string => String.fromCharCode(...bytes);
+
+// deviceId radio = 12 hexa majuscules : depuis le nom `RadioTuuti-XXXXXXXXXXXX`,
+// sinon depuis l'adresse MAC (id BLE sur Android ; sur iOS l'id est un UUID).
+function radioIdFrom(name?: string, bleId?: string): string {
+  const fromName = name?.match(/^RadioTuuti-([0-9A-Fa-f]{12})$/)?.[1];
+  if (fromName) return fromName.toUpperCase();
+  if (bleId && /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(bleId)) return bleId.replace(/:/g, '').toUpperCase();
+  return '';
+}
 
 type BleEntry = { time: string; raw: string };
 
@@ -45,6 +57,8 @@ export default function BleTestScreen() {
 
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
+  const [radioId, setRadioId] = useState(() => radioIdFrom(deviceName, deviceId));
+  const [sending, setSending] = useState(false);
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [bleEntries, setBleEntries] = useState<BleEntry[]>([]);
@@ -115,23 +129,33 @@ export default function BleTestScreen() {
 
   const sendWifiCredentials = async () => {
     if (!connectedDevice) return;
+    setSending(true);
     try {
-      const credentials = `${ssid},${password}`;
-      await ble.writeCharacteristic(
-        connectedDevice.id,
-        ESP32_SERVICE_UUID,
-        ESP32_CHARACTERISTIC_UUID,
-        stringToBytes(credentials),
-        true,
-      );
-      addLog(`Envoyé : ${ssid},***`);
+      addLog(`Demande du pairingToken pour ${radioId}...`);
+      const pairingToken = await fetchPairingToken(radioId);
+      addLog(`pairingToken reçu (${pairingToken.length} car.)`);
+
+      // JSON terminé par `\n`, envoyé en morceaux : l'ESP32 accumule jusqu'au `\n`.
+      const message = stringToBytes(JSON.stringify({ ssid, password, pairingToken }) + '\n');
+      for (let i = 0; i < message.length; i += BLE_CHUNK_SIZE) {
+        await ble.writeCharacteristic(
+          connectedDevice.id,
+          ESP32_SERVICE_UUID,
+          ESP32_CHARACTERISTIC_UUID,
+          message.slice(i, i + BLE_CHUNK_SIZE),
+          true,
+        );
+      }
+      addLog(`Envoyé : { ssid: ${ssid}, password: ***, pairingToken: *** } (${message.length} octets)`);
     } catch (e) {
       addLog(`Erreur d'envoi : ${e}`);
+    } finally {
+      setSending(false);
     }
   };
 
   const isConnected = !!connectedDevice;
-  const canSend = isConnected && ssid.trim().length > 0;
+  const canSend = isConnected && !sending && ssid.trim().length > 0 && /^[0-9A-F]{12}$/.test(radioId);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -170,6 +194,17 @@ export default function BleTestScreen() {
           <Text style={styles.cardTitle}>Credentials Wi-Fi</Text>
           <TextInput
             style={[styles.input, !isConnected && styles.inputDisabled]}
+            placeholder="Device ID radio (ex. 448CC41DB410)"
+            placeholderTextColor="#aaa"
+            value={radioId}
+            onChangeText={(v) => setRadioId(v.trim().toUpperCase())}
+            editable={isConnected}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={12}
+          />
+          <TextInput
+            style={[styles.input, !isConnected && styles.inputDisabled]}
             placeholder="SSID"
             placeholderTextColor="#aaa"
             value={ssid}
@@ -190,7 +225,7 @@ export default function BleTestScreen() {
             style={({ pressed }) => [styles.sendButton, !canSend && styles.sendButtonDisabled, pressed && styles.sendButtonPressed]}
             onPress={sendWifiCredentials}
             disabled={!canSend}>
-            <Text style={styles.sendButtonText}>Envoyer</Text>
+            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendButtonText}>Envoyer</Text>}
           </Pressable>
         </View>
 
