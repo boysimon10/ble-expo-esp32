@@ -78,7 +78,7 @@ export default function ScanScreen() {
         });
       },
       (err) => {
-        setError(err);
+        setError(err.message);
         setScanning(false);
       },
     );
@@ -153,7 +153,7 @@ export default function ScanScreen() {
           ListEmptyComponent={
             !scanning ? (
               <Text style={styles.emptyText}>Lance un scan pour découvrir des appareils.</Text>
-            ) : null
+            ) : undefined
           }
         />
       </View>
