@@ -164,6 +164,8 @@ export default function BleTestScreen() {
 
   useEffect(() => {
     if (deviceId) {
+      // Connexion BLE (système externe) au montage : le setState de « connexion en cours » est voulu.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       connectToDevice({ id: deviceId, name: deviceName ?? '' } as BLEDevice);
     }
   }, [deviceId, deviceName, connectToDevice]);
